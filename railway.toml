@@ -1,0 +1,6 @@
+[build]
+builder = "NIXPACKS"
+
+[deploy]
+startCommand = "gunicorn wsgi:app"
+restartPolicyType = "ON_FAILURE"
