@@ -1,11 +1,15 @@
-# create virtual environment
-RUN python3 -m venv /opt/venv
+FROM python:3.12-slim
 
-# activate venv
+WORKDIR /app
+
+COPY requirements.txt .
+
+RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# upgrade pip
 RUN pip install --upgrade pip
-
-# install dependencies
 RUN pip install -r requirements.txt
+
+COPY . .
+
+CMD ["gunicorn", "app:app"]
