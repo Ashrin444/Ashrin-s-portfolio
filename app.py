@@ -5,7 +5,6 @@ from datetime import datetime
 import requests
 from flask import Flask, render_template, request
 from flask_mail import Mail, Message
-from flask_migrate import Migrate
 from flask_sqlalchemy import SQLAlchemy
 
 # ===============================
@@ -14,31 +13,30 @@ from flask_sqlalchemy import SQLAlchemy
 
 app = Flask(__name__)
 
-# Secret Key (use environment variable in production)
+# Secret Key (from environment)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev_secret_key')
 
-# Database configuration
+# ===============================
+# DATABASE CONFIGURATION
+# ===============================
+
+# SQLite is OK for portfolio (Render filesystem is ephemeral but works)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///db.sqlite3'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
+db = SQLAlchemy(app)
+
 # ===============================
-# EMAIL CONFIGURATION (GMAIL SMTP)
+# EMAIL CONFIGURATION (ENV VARS)
 # ===============================
 
 app.config['MAIL_SERVER'] = 'smtp.gmail.com'
 app.config['MAIL_PORT'] = 587
 app.config['MAIL_USE_TLS'] = True
-app.config['MAIL_USERNAME'] = 'ashrinlazer2005@gmail.com'
-app.config['MAIL_PASSWORD'] = 'nlqxcrfqgoxpsqwz'
-app.config['MAIL_DEFAULT_SENDER'] = 'sender@gmail.com'
+app.config['MAIL_USERNAME'] = os.environ.get('MAIL_USERNAME')
+app.config['MAIL_PASSWORD'] = os.environ.get('MAIL_PASSWORD')
+app.config['MAIL_DEFAULT_SENDER'] = os.environ.get('MAIL_DEFAULT_SENDER')
 
-
-# ===============================
-# INITIALIZE EXTENSIONS
-# ===============================
-
-db = SQLAlchemy(app)
-migrate = Migrate(app, db)
 mail = Mail(app)
 
 # ===============================
@@ -59,14 +57,14 @@ class Contact(db.Model):
         return f"<Contact {self.name}>"
 
 # ===============================
-# CREATE DATABASE TABLES
+# CREATE TABLES (SAFE)
 # ===============================
 
 with app.app_context():
     db.create_all()
 
 # ===============================
-# HELPER FUNCTION
+# HELPER FUNCTIONS
 # ===============================
 
 def get_projects():
@@ -98,59 +96,51 @@ def err_500(error):
 def main_page():
     return render_template('index.html', title='Ashrin Lazer A - Homepage')
 
-
 @app.route('/contact', methods=['GET', 'POST'])
 def contact_page():
     contact_status = None
 
     if request.method == 'POST':
-
         name = request.form.get('name', '').strip()
         email = request.form.get('email', '').strip()
         phone = request.form.get('phone', '').strip()
         reason = request.form.get('reason', '').strip()
 
-        # Basic Validation
+        # Validation
         if not (name and email and phone and reason):
-            contact_status = False
-            return render_template('contact.html', title='Contact', contact_status=contact_status)
+            return render_template('contact.html', title='Contact', contact_status=False)
 
-        phone_pattern = r'^\d{10,13}$'
-        if not re.fullmatch(phone_pattern, phone):
-            contact_status = False
-            return render_template('contact.html', title='Contact', contact_status=contact_status)
+        if not re.fullmatch(r'^\d{10,13}$', phone):
+            return render_template('contact.html', title='Contact', contact_status=False)
 
-        # Save to Database
+        # Save to database
         entry = Contact(name=name, phone=phone, email=email, reason=reason)
         db.session.add(entry)
         db.session.commit()
 
-        # Send Email (if configured)
-        try:
-            if app.config['MAIL_USERNAME'] and app.config['MAIL_PASSWORD']:
+        # Send email (only if env vars exist)
+        if app.config['MAIL_USERNAME'] and app.config['MAIL_PASSWORD']:
+            try:
                 msg = Message(
                     subject="New Contact Form Submission",
-                    recipients=[app.config['MAIL_USERNAME']]
-                )
-
-                msg.body = f"""
+                    recipients=[app.config['MAIL_USERNAME']],
+                    body=f"""
 New Contact Form Submission
 
 Name: {name}
 Email: {email}
 Phone: {phone}
 Reason: {reason}
-Date: {datetime.now()}
+Date: {datetime.utcnow()}
 """
+                )
                 mail.send(msg)
-
-        except Exception as e:
-            print("Email sending failed:", e)
+            except Exception as e:
+                print("Email sending failed:", e)
 
         contact_status = True
 
     return render_template('contact.html', title='Contact', contact_status=contact_status)
-
 
 @app.route('/projects')
 def projects_page():
@@ -161,8 +151,9 @@ def projects_page():
     )
 
 # ===============================
-# RUN APP
+# HEALTH CHECK (IMPORTANT FOR RENDER)
 # ===============================
 
-if __name__ == '__main__':
-    app.run(debug=True)
+@app.route('/health')
+def health():
+    return "OK", 200
