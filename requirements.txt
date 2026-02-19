@@ -1,6 +1,5 @@
 Flask
+gunicorn
 Flask-Mail
 Flask-SQLAlchemy
-Flask-Migrate
 requests
-gunicorn
